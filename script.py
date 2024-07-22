@@ -1,6 +1,5 @@
 import datetime
 import requests
-from bs4 import BeautifulSoup
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 def get_current_date_time():
@@ -21,7 +20,8 @@ def get_location():
             'latitude': data['latitude'],
             'longitude': data['longitude']
         }
-    except requests.RequestException:
+    except requests.RequestException as e:
+        print(f"Error fetching location data: {e}")
         location = {
             'city': 'Unknown',
             'region': 'Unknown',
@@ -31,13 +31,22 @@ def get_location():
         }
     return location
 
-def get_weather(city):
-    """Get the current weather for the given city by scraping wttr.in."""
+def get_weather(latitude, longitude):
+    """Get the current weather for the specified latitude and longitude using Open-Meteo API."""
     try:
-        response = requests.get(f'https://wttr.in/{city}?format=%C+%t', timeout=5)
+        params = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'current_weather': True
+        }
+        response = requests.get('https://api.open-meteo.com/v1/forecast', params=params, timeout=10)
         response.raise_for_status()
-        weather = response.text.strip()
-    except requests.RequestException:
+        data = response.json()
+        current_weather = data['current_weather']
+        temperature = current_weather['temperature']
+        weather = f"Temperature: {temperature}°C"
+    except Exception as e:
+        print(f"Error fetching weather data: {e}")
         weather = "Weather data not available"
     return weather
 
@@ -47,7 +56,10 @@ class RequestHandler(BaseHTTPRequestHandler):
         if self.path == '/status':
             current_date_time = get_current_date_time()
             location = get_location()
-            weather = get_weather(location['city'])
+            if location['latitude'] and location['longitude']:
+                weather = get_weather(location['latitude'], location['longitude'])
+            else:
+                weather = "Weather data not available"
 
             response_content = (
                 "**********************************\n"
