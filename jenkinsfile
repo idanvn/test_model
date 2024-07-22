@@ -1,6 +1,10 @@
 pipeline {
     agent { label 'ubuntu_host' }
 
+    triggers {
+        githubPush()
+    }
+
     stages {
         stage('Checkout') {
             steps {
