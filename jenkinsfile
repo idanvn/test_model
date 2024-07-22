@@ -2,7 +2,7 @@ pipeline {
     agent { label 'ubuntu_host' }
 
     triggers {
-        githubPush()
+        pollSCM('H/15 * * * *') // Poll the repository every 15 minutes
     }
 
     stages {
