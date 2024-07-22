@@ -1,0 +1,57 @@
+pipeline {
+    agent { label 'ubuntu_host' }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                // Checkout the source code from GitHub
+                checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: 'https://github.com/idanvn/test_model']]])
+            }
+        }
+        stage('Docker Build') {
+            steps {
+                // Build the Docker image using docker-compose for testing
+                sh 'docker-compose -f docker-compose.test.yml build'
+            }
+        }
+        stage('Test') {
+            steps {
+                script {
+                    // Run the Docker container in detached mode for testing
+                    sh 'docker-compose -f docker-compose.test.yml up -d'
+                    // Wait for the container to initialize
+                    sleep 10
+                    // Check if the test container is running properly
+                    def containerStatus = sh(script: 'docker inspect -f {{.State.Running}} my-python-app-test', returnStdout: true).trim()
+                    if (containerStatus != 'true') {
+                        error("Test container failed to start")
+                    }
+                }
+            }
+            post {
+                always {
+                    // Stop and remove the test container
+                    sh 'docker-compose -f docker-compose.test.yml down'
+                }
+            }
+        }
+        stage('Docker Build for Prod') {
+            steps {
+                // Build the Docker image using docker-compose for production
+                sh 'docker-compose -f docker-compose.prod.yml build'
+            }
+        }
+        stage('Deploy to Prod') {
+            steps {
+                // Deploy the Docker container to production using docker-compose
+                sh 'docker-compose -f docker-compose.prod.yml up -d'
+            }
+        }
+    }
+    post {
+        always {
+            // Clean the workspace after the pipeline execution
+            cleanWs()
+        }
+    }
+}
