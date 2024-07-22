@@ -8,7 +8,10 @@ WORKDIR /usr/src/app
 COPY . .
 
 # Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir requests
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Expose the port the app runs on
+EXPOSE 2024
 
 # Run script.py when the container launches
 CMD ["python", "./script.py"]
