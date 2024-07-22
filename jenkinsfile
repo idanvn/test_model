@@ -2,14 +2,20 @@ pipeline {
     agent { label 'ubuntu_host' }
 
     triggers {
-        pollSCM('H/15 * * * *') // Poll the repository every 15 minutes
+        pollSCM('H/5 * * * *') // Poll the repository every 5 minutes
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Checkout the source code from GitHub
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: 'https://github.com/idanvn/test_model']]])
+                script {
+                    // Checkout the source code from GitHub
+                    checkout([$class: 'GitSCM', branches: [[name: '*/main']], userRemoteConfigs: [[url: 'https://github.com/idanvn/test_model']]])
+                    // Capture the Git commit hash
+                    env.GIT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+                    // Define the image version based on the Jenkins build number and Git commit hash
+                    env.IMAGE_VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(7)}"
+                }
             }
         }
         stage('Docker Build') {
@@ -26,7 +32,7 @@ pipeline {
                     // Wait for the container to initialize
                     sleep 10
                     // Check if the test container is running properly
-                    def containerStatus = sh(script: 'docker inspect -f {{.State.Running}} my-python-app-test', returnStdout: true).trim()
+                    def containerStatus = sh(script: 'docker inspect -f "{{.State.Running}}" my-python-app-test', returnStdout: true).trim()
                     if (containerStatus != 'true') {
                         error("Test container failed to start")
                     }
@@ -41,14 +47,48 @@ pipeline {
         }
         stage('Docker Build for Prod') {
             steps {
-                // Build the Docker image using docker-compose for production
-                sh 'docker-compose -f docker-compose.prod.yml build'
+                script {
+                    // Build the Docker image using docker-compose for production
+                    sh 'docker-compose -f docker-compose.prod.yml build'
+                    // Tag the Docker image with the version
+                    def imageName = "my-python-app-prod:${env.IMAGE_VERSION}"
+                    sh "docker tag script_test_app:latest ${imageName}"
+                }
             }
         }
         stage('Deploy to Prod') {
             steps {
-                // Deploy the Docker container to production using docker-compose
-                sh 'docker-compose -f docker-compose.prod.yml up -d'
+                script {
+                    // Deploy the Docker container to production using docker-compose with the tagged version
+                    def imageName = "my-python-app-prod:${env.IMAGE_VERSION}"
+                    // Use environment variable to substitute image version in docker-compose.prod.yml
+                    sh "sed -i 's|my-python-app-prod:latest|${imageName}|' docker-compose.prod.yml"
+                    sh "docker-compose -f docker-compose.prod.yml up -d"
+                    // Optionally push the tagged image to a Docker registry
+                    // sh "docker push ${imageName}"
+                }
+            }
+        }
+        stage('Check Prod Status') {
+            steps {
+                script {
+                    // Check if the production container is running
+                    def prodContainerStatus = sh(script: 'docker inspect -f "{{.State.Running}}" my-python-app-prod', returnStdout: true).trim()
+                    if (prodContainerStatus != 'true') {
+                        error("Production container is not running")
+                    }
+                }
+            }
+        }
+        stage('Remove Penultimate Image') {
+            steps {
+                script {
+                    // Remove the penultimate image
+                    def images = sh(script: "docker images --format '{{.Repository}}:{{.Tag}}' | grep my-python-app-prod | tail -n +2 | head -n 1", returnStdout: true).trim()
+                    if (images) {
+                        sh "docker rmi ${images}"
+                    }
+                }
             }
         }
     }
